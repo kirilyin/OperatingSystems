@@ -11,13 +11,20 @@ DWORD WINAPI worker(LPVOID param) {
     std::cout << "Введи вещественное число: ";
     std::cin >> d;
     int i = floor(d);
-    std::cout << "\nWorker: числа, кратные целой части вещественного: ";
+    std::cout << i << std::endl;
+    std::cout << "\nWorker: количество чисел, кратных целой части вещественного числа: ";
     int k = 0;
-    for (int x : *vec) {
-        if (x % i == 0) k++;
+    if (i == 0) {
+        for (int x : *vec) {
+            if (x == 0) k++;
+        }
     }
-    std::cout << k << " ";
-    std::cout << std::endl;
+    else {
+        for (int x : *vec) {
+            if (x % i == 0) k++;
+        }
+    }
+    std::cout << k << std::endl;
     return 0;
 }
 
@@ -28,7 +35,10 @@ int main() {
     int n;
     std::cout << "Введите размер массива: ";
     std::cin >> n;
-
+    if (n < 0) {
+        std::cout << "Так нельзя (невалдный размер массива)\n";
+        return 0;
+    }
     std::vector<int> arr(n);
     std::cout << "Заполнить массив случайно? (1 - да, 0 - нет): ";
     int choice; std::cin >> choice;
@@ -48,20 +58,20 @@ int main() {
     std::cout << "\n=== Создание потока через CreateThread ===\n";
 
     HANDLE hThread = CreateThread(
-        nullptr,             
-        0,                   
-        worker,        
-        &arr,              
-        0,   
-        nullptr             
+        nullptr,
+        0,
+        worker,
+        &arr,
+        0,
+        nullptr
     );
     if (hThread == NULL) {
         std::cerr << "Ошибка создания потока\n";
-        return -1; 
+        return -1;
     }
     SuspendThread(hThread);
     Sleep(delay);
-    ResumeThread(hThread); 
+    ResumeThread(hThread);
     WaitForSingleObject(hThread, INFINITE);
     CloseHandle(hThread);
 

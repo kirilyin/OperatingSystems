@@ -1,0 +1,9 @@
+*.vs
+*.sln
+*.json
+*.vcxproj
+*.filters
+*.user
+
+.vs/
+out/

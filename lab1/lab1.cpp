@@ -43,20 +43,20 @@ int main() {
     std::cout << "\n=== Создание потока через CreateThread ===\n";
 
     HANDLE hThread = CreateThread(
-        nullptr,             
-        0,                   
-        worker,        
-        &arr,              
-        0,   
-        nullptr             
+        nullptr,
+        0,
+        worker,
+        &arr,
+        0,
+        nullptr
     );
     if (hThread == NULL) {
         std::cerr << "Ошибка создания потока\n";
-        return -1; 
+        return -1;
     }
     SuspendThread(hThread);
     Sleep(delay);
-    ResumeThread(hThread); 
+    ResumeThread(hThread);
     WaitForSingleObject(hThread, INFINITE);
     CloseHandle(hThread);
 

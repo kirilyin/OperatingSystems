@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>
 
 struct ThreadParams {
     int num;
@@ -13,6 +14,7 @@ struct ThreadParams {
     HANDLE continueEvent;
     HANDLE blockEvent;
     HANDLE terminateEvent;
+    bool silent;
 };
 
 DWORD WINAPI markerThread(LPVOID param) {
@@ -44,13 +46,15 @@ DWORD WINAPI markerThread(LPVOID param) {
             LeaveCriticalSection(p->cs);
         }
 
-        std::cout << "Marker " << p->num << " marked " << count << " blocked at " << blockIndex << std::endl;
+        if (!p->silent) {
+            std::cout << "Marker " << p->num << " marked " << count << " blocked at " << blockIndex << std::endl;
+        }
         SetEvent(p->blockEvent);
 
         HANDLE waits[2] = { p->continueEvent, p->terminateEvent };
         DWORD res = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
 
-        if (res == WAIT_OBJECT_0 + 1) { 
+        if (res == WAIT_OBJECT_0 + 1) {
             EnterCriticalSection(p->cs);
             for (int i = 0; i < p->size; ++i) {
                 if (p->arr[i] == p->num) {
@@ -58,7 +62,6 @@ DWORD WINAPI markerThread(LPVOID param) {
                 }
             }
             LeaveCriticalSection(p->cs);
-            delete p;
             return 0;
         }
     }
@@ -66,102 +69,140 @@ DWORD WINAPI markerThread(LPVOID param) {
     return 0;
 }
 
-int main() {
-    int size;
-    std::cout << "Enter array size: ";
-    std::cin >> size;
+class MarkerSystem {
+public:
+    MarkerSystem(int size, int num_threads, bool silent = false);
+    ~MarkerSystem();
 
-    int* arr = new int[size];
-    for (int i = 0; i < size; ++i) {
+    void start();
+    void waitForAllBlocked();
+    std::vector<int> getArray() const;
+    void terminateMarker(int num); // num from 1 to num_threads
+    void continueAllActive();
+    bool hasActive() const;
+    std::vector<int> getActiveMarkers() const;
+
+private:
+    int array_size;
+    int num_threads;
+    int* arr;
+    mutable CRITICAL_SECTION cs;
+    HANDLE startEvent;
+    std::vector<HANDLE> continueEvents;
+    std::vector<HANDLE> blockEvents;
+    std::vector<HANDLE> terminateEvents;
+    std::vector<HANDLE> threadHandles;
+    std::vector<ThreadParams*> threadParams;
+    std::vector<int> active; // indices 0 to num_threads-1
+    bool silent;
+};
+
+MarkerSystem::MarkerSystem(int s, int n, bool sil) : array_size(s), num_threads(n), silent(sil) {
+    arr = new int[s];
+    for (int i = 0; i < s; ++i) {
         arr[i] = 0;
     }
 
-    int N;
-    std::cout << "Enter number of marker threads: ";
-    std::cin >> N;
-
-    CRITICAL_SECTION cs;
     InitializeCriticalSection(&cs);
 
-    HANDLE startEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    startEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-    HANDLE* continueEvents = new HANDLE[N];
-    HANDLE* blockEvents = new HANDLE[N];
-    HANDLE* terminateEvents = new HANDLE[N];
-    HANDLE* threads = new HANDLE[N];
+    continueEvents.resize(n);
+    blockEvents.resize(n);
+    terminateEvents.resize(n);
+    threadHandles.resize(n);
+    threadParams.resize(n);
+    active.resize(n);
 
-    std::vector<int> active;
-
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < n; ++i) {
         continueEvents[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
         blockEvents[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
         terminateEvents[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
-        ThreadParams* p = new ThreadParams{
+        threadParams[i] = new ThreadParams{
             i + 1,
-            size,
+            s,
             arr,
             &cs,
             startEvent,
             continueEvents[i],
             blockEvents[i],
-            terminateEvents[i]
+            terminateEvents[i],
+            silent
         };
-        threads[i] = CreateThread(NULL, 0, markerThread, p, 0, NULL);
-        active.push_back(i);
+        threadHandles[i] = CreateThread(NULL, 0, markerThread, threadParams[i], 0, NULL);
+        active[i] = i;
     }
 
-    SetEvent(startEvent);
+}
+std::vector<int> MarkerSystem::getActiveMarkers() const {
+    std::vector<int> markers;
+    for (int idx : active) {
+        markers.push_back(idx + 1);
+    }
+    return markers;
+}
 
-    while (!active.empty()) {
-        DWORD n_active = static_cast<DWORD>(active.size());
-        HANDLE* waitBlocks = new HANDLE[n_active];
-        for (DWORD j = 0; j < n_active; ++j) {
-            waitBlocks[j] = blockEvents[active[j]];
-        }
-        WaitForMultipleObjects(n_active, waitBlocks, TRUE, INFINITE);
-        delete[] waitBlocks;
+MarkerSystem::~MarkerSystem() {
+    for (int i = 0; i < num_threads; ++i) {
+        SetEvent(terminateEvents[i]);
+    }
+    WaitForMultipleObjects(num_threads, threadHandles.data(), TRUE, INFINITE);
 
-        std::cout << "Current array: ";
-        for (int i = 0; i < size; ++i) {
-            std::cout << arr[i] << " ";
-        }
-        std::cout << std::endl;
+    for (size_t i = 0; i < threadHandles.size(); ++i) {
+        CloseHandle(threadHandles[i]);
+    }
 
-        int k;
-        std::cout << "Enter marker number to terminate: ";
-        std::cin >> k;
-        int indexTerminate = k - 1;
-
-        SetEvent(terminateEvents[indexTerminate]);
-
-        WaitForSingleObject(threads[indexTerminate], INFINITE);
-
-        active.erase(std::remove(active.begin(), active.end(), indexTerminate), active.end());
-
-        std::cout << "Array after termination: ";
-        for (int i = 0; i < size; ++i) {
-            std::cout << arr[i] << " ";
-        }
-        std::cout << std::endl;
-
-        for (int j : active) {
-            SetEvent(continueEvents[j]);
-        }
+    for (auto p : threadParams) {
+        delete p;
     }
 
     DeleteCriticalSection(&cs);
     CloseHandle(startEvent);
-    for (int i = 0; i < N; ++i) {
+    for (size_t i = 0; i < continueEvents.size(); ++i) {
         CloseHandle(continueEvents[i]);
         CloseHandle(blockEvents[i]);
         CloseHandle(terminateEvents[i]);
-        CloseHandle(threads[i]);
     }
-    delete[] continueEvents;
-    delete[] blockEvents;
-    delete[] terminateEvents;
-    delete[] threads;
     delete[] arr;
+}
 
-    return 0;
+void MarkerSystem::start() {
+    SetEvent(startEvent);
+}
+
+void MarkerSystem::waitForAllBlocked() {
+    DWORD n_active = static_cast<DWORD>(active.size());
+    HANDLE* waitBlocks = new HANDLE[n_active];
+    for (DWORD j = 0; j < n_active; ++j) {
+        waitBlocks[j] = blockEvents[active[j]];
+    }
+    WaitForMultipleObjects(n_active, waitBlocks, TRUE, INFINITE);
+    delete[] waitBlocks;
+}
+
+std::vector<int> MarkerSystem::getArray() const {
+    std::vector<int> copy;
+    EnterCriticalSection(&cs);
+    copy.assign(arr, arr + array_size);
+    LeaveCriticalSection(&cs);
+    return copy;
+}
+
+void MarkerSystem::terminateMarker(int num) {
+    int index = num - 1;
+    auto it = std::find(active.begin(), active.end(), index);
+    if (it == active.end()) return;
+    SetEvent(terminateEvents[index]);
+    WaitForSingleObject(threadHandles[index], INFINITE);
+    active.erase(it);
+}
+
+void MarkerSystem::continueAllActive() {
+    for (int j : active) {
+        SetEvent(continueEvents[j]);
+    }
+}
+
+bool MarkerSystem::hasActive() const {
+    return !active.empty();
 }

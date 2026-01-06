@@ -1,6 +1,5 @@
-#include <windows.h>
+#include "lab3.h"
 #include <iostream>
-#include <vector>
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
@@ -77,7 +76,7 @@ public:
     void start();
     void waitForAllBlocked();
     std::vector<int> getArray() const;
-    void terminateMarker(int num); // num from 1 to num_threads
+    void terminateMarker(int num);
     void continueAllActive();
     bool hasActive() const;
     std::vector<int> getActiveMarkers() const;
@@ -93,7 +92,7 @@ private:
     std::vector<HANDLE> terminateEvents;
     std::vector<HANDLE> threadHandles;
     std::vector<ThreadParams*> threadParams;
-    std::vector<int> active; // indices 0 to num_threads-1
+    std::vector<int> active;
     bool silent;
 };
 

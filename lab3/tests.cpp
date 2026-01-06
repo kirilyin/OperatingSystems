@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "lab3.cpp" 
+#include "lab3.h" 
 #include <thread>
 #include <chrono>
 
